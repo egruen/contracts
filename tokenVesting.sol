@@ -14,44 +14,53 @@ contract TokenVesting is Ownable, ReentrancyGuard {
     IERC20 private _token;
 
     struct VestingSchedule {
-        uint256 start;
-        uint256 duration;
         uint256 amountTotal;
         uint256 amountReleased;
         bool isBlacklisted;
     }
 
+    uint256 public start;
+    uint256 public duration;
+
     mapping(address => VestingSchedule) public vestingSchedules;
 
-    event BeneficiaryAdded(address indexed beneficiary, uint256 start, uint256 duration, uint256 totalAmount);
+    event BeneficiaryAdded(address indexed beneficiary, uint256 totalAmount);
     event TokensReleased(address indexed beneficiary, uint256 amount);
     event BeneficiaryBlacklisted(address indexed beneficiary);
     event BeneficiaryWhitelisted(address indexed beneficiary);
+    event VestingScheduleUpdated(uint256 start, uint256 duration);
 
     /**
-     * @dev Creates a vesting contract that vests its balance of any ERC20 token to the
-     * beneficiary, gradually in a linear fashion until start + duration. By then all
-     * of the balance will have vested.
-     * @param tokenAddress address of the ERC20 token contract
+     * @dev Sets the initial parameters for the vesting contract.
      */
-    constructor(address tokenAddress) {
-        require(tokenAddress != address(0), "TokenVesting: token is the zero address");
-        _token = IERC20(tokenAddress);
+    constructor(address initialOwner) Ownable(initialOwner) {}
+
+    /**
+     * @notice Adds multiple beneficiaries to the vesting schedule in a single transaction.
+     * @param beneficiaries Array of addresses of the beneficiaries to whom vested tokens are transferred.
+     * @param totalAmounts Array of total amounts of tokens to be vested for each beneficiary.
+     */
+    function addBeneficiaries(address[] calldata beneficiaries, uint256[] calldata totalAmounts) public onlyOwner {
+        require(beneficiaries.length == totalAmounts.length, "TokenVesting: Array lengths do not match");
+        for (uint256 i = 0; i < beneficiaries.length; i++) {
+            address beneficiary = beneficiaries[i];
+            uint256 totalAmount = totalAmounts[i];
+            require(beneficiary != address(0), "TokenVesting: beneficiary is the zero address");
+            require(vestingSchedules[beneficiary].amountTotal == 0, "TokenVesting: beneficiary already added");
+            vestingSchedules[beneficiary] = VestingSchedule(totalAmount, 0, false);
+            emit BeneficiaryAdded(beneficiary, totalAmount);
+        }
     }
 
     /**
-     * @notice Adds a beneficiary to the vesting schedule
-     * @param beneficiary Address of the beneficiary to whom vested tokens are transferred
-     * @param start The time (as Unix time) at which point vesting starts
-     * @param duration Duration in seconds of the period in which the tokens will vest
-     * @param totalAmount The total amount of tokens to be released at the end of the vesting
+     * @notice Sets the global vesting schedule for all beneficiaries.
+     * @param _start The time (as Unix time) at which point vesting starts.
+     * @param _duration Duration in seconds of the period in which the tokens will vest.
      */
-    function addBeneficiary(address beneficiary, uint256 start, uint256 duration, uint256 totalAmount) public onlyOwner {
-        require(beneficiary != address(0), "TokenVesting: beneficiary is the zero address");
-        require(vestingSchedules[beneficiary].amountTotal == 0, "TokenVesting: beneficiary already added");
-
-        vestingSchedules[beneficiary] = VestingSchedule(start, duration, totalAmount, 0, false);
-        emit BeneficiaryAdded(beneficiary, start, duration, totalAmount);
+    function setVestingSchedule(uint256 _start, uint256 _duration) public onlyOwner {
+        start = _start;
+        duration = _duration;
+        emit VestingScheduleUpdated(_start, _duration);
     }
 
     /**
@@ -86,15 +95,15 @@ contract TokenVesting is Ownable, ReentrancyGuard {
         VestingSchedule storage schedule = vestingSchedules[beneficiary];
         uint256 totalBalance = schedule.amountTotal;
 
-        if (block.timestamp < schedule.start) {
+        if (block.timestamp < start) {
             return 0;
-        } else if (block.timestamp >= schedule.start + schedule.duration) {
+        } else if (block.timestamp >= start + duration) {
             return totalBalance;
         } else {
             uint256 initialUnlock = totalBalance * 15 / 100;
-            uint256 postStart = block.timestamp - schedule.start;
+            uint256 postStart = block.timestamp - start;
             uint256 remainingBalance = totalBalance - initialUnlock;
-            uint256 vestingDuration = schedule.duration;
+            uint256 vestingDuration = duration;
 
             return initialUnlock + (remainingBalance * postStart / vestingDuration);
         }
@@ -126,4 +135,11 @@ contract TokenVesting is Ownable, ReentrancyGuard {
         require(newToken != address(0), "TokenVesting: new token is the zero address");
         _token = IERC20(newToken);
     }
+
+    function ownerWithdraw(uint256 amount) public onlyOwner nonReentrant {
+        require(amount > 0, "TokenVesting: Amount must be greater than 0");
+       
+        _token.transfer(owner(), amount);
+    }
+
 }
