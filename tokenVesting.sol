@@ -65,10 +65,11 @@ contract TokenVesting is Ownable, ReentrancyGuard {
 
     /**
      * @notice Transfers vested tokens to beneficiary
-     * @param beneficiary the address of the beneficiary to whom vested tokens are transferred
      */
-    function release(address beneficiary) public nonReentrant {
+    function Withdraw() public nonReentrant {
+        address beneficiary = msg.sender; // beneficiary is the message sender
         require(!vestingSchedules[beneficiary].isBlacklisted, "TokenVesting: beneficiary is blacklisted");
+        require(vestingSchedules[beneficiary].amountTotal > 0, "TokenVesting: sender is not a beneficiary");
         uint256 unreleased = _releasableAmount(beneficiary);
 
         require(unreleased > 0, "TokenVesting: no tokens are due");
@@ -83,7 +84,7 @@ contract TokenVesting is Ownable, ReentrancyGuard {
      * @notice Calculates the amount that has already vested but hasn't been released yet.
      * @param beneficiary address of the beneficiary
      */
-    function _releasableAmount(address beneficiary) private view returns (uint256) {
+    function _releasableAmount(address beneficiary) public view returns (uint256) {
         return _vestedAmount(beneficiary) - vestingSchedules[beneficiary].amountReleased;
     }
 
